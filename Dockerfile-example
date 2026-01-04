@@ -1,0 +1,522 @@
+FROM rockylinux/rockylinux:8.4
+
+# INSTALL CENTOS APPS
+RUN yum -y update && yum -y install \
+     epel-release \
+    httpd httpd-tools httpd-devel yum-utils \
+    unzip unzip ksh  \
+    nano which mlocate \
+    nodejs zsh redis git \
+    && updatedb \
+    && yum groupinstall -y 'Development tools' \
+    && yum -y install   mod_proxy_html libssh2-devel wget
+
+#LINUX APPS NEEDED TO BUILD AND COMPILE OTHER SOFTWARE
+RUN yum -y install gcc make gcc-c++ cpp kernel-headers.x86_64 libxml2-devel
+RUN yum -y install openssl-devel bzip2-devel libjpeg-devel libpng-devel freetype-devel
+RUN yum -y install openldap-devel postgresql-devel net-snmp-devel libxslt-devel
+RUN yum -y install libc-client-devel icu libicu libicu-devel gmp-devel curl-devel libmcrypt-devel
+RUN yum -y install pcre-devel
+RUN yum -y install sqlite-devel
+# RUN yum -y install db4-devel
+# RUN yum -y install enchant-devel
+RUN yum -y install libXpm-devel
+RUN yum -y install mysql-devel
+RUN yum -y install readline-devel
+# RUN yum -y install libedit-devel
+# RUN yum -y install recode-devel
+# RUN yum -y install libtidy-devel
+RUN yum -y install libtool-ltdl-devel
+RUN yum -y install freetds freetds-devel freetds-doc unixODBC unixODBC-devel
+RUN yum -y install glibc glibc-common gd gd-devel php-devel libiodbc
+RUN yum install -y glibc-common  glibc-locale-source
+RUN localedef -i en_US -f UTF-8 en_US.UTF-8
+
+
+# Installs SupervisorD and some debugging tools \
+RUN yum install -y supervisor iproute xclip net-tools
+
+#prepare other installs
+ARG FOLDERNAME=installtemp
+ARG PHP_VERSION=5.6.15
+ARG PHP_INSTALL_VERSION=56
+ARG PHP_INSTALL_FOLDER=php-$PHP_VERSION
+RUN mkdir -p /$FOLDERNAME
+RUN chmod 777 -R /$FOLDERNAME
+
+# Install Redis build dependencies
+RUN yum install -y \
+    wget \
+    gcc \
+    make \
+    autoconf \
+    php-devel \
+    php-pear
+
+
+#MAIN PHP
+COPY docker/config/php/php-$PHP_VERSION.tar.gz /$FOLDERNAME/php-$PHP_VERSION.tar.gz
+
+WORKDIR "/$FOLDERNAME"
+
+ENV PHP_INI_SCAN_DIR=/etc/php.d/
+RUN echo 'export PHP_INI_SCAN_DIR=/etc/php.d/'
+
+RUN ln -s /usr/lib64/libsybdb.so /usr/lib/
+
+#PHP INSTALL ############################
+# Download and extract PHP 5.6.14
+#RUN wget -O /tmp/php-5.6.15.tar.gz https://www.php.net/distributions/php-5.6.15.tar.gz && \
+#    tar -xzf /tmp/php-5.6.15.tar.gz -C /tmp
+
+# Download and extract PHP $PHP_VERSION
+#RUN wget -O /tmp/$PHP_INSTALL_FOLDER.tar.gz https://www.php.net/distributions/$PHP_INSTALL_FOLDER.tar.gz && \
+#    tar -xzf /tmp/$PHP_INSTALL_FOLDER.tar.gz -C /$FOLDERNAME
+#    tar -xzf php-5.6.15.tar.gz -C /installtemp
+#
+RUN wget https://openssl.org/source/old/1.1.0/openssl-1.1.0e.tar.gz && \
+    tar -xzvf openssl-1.1.0e.tar.gz && \
+    cd openssl-1.1.0e && \
+    ./config --prefix=/usr/local/openssl --openssldir=/usr/local/openssl && \
+    make && make install
+
+
+RUN tar zxvf $PHP_INSTALL_FOLDER.tar.gz
+RUN     cd  $PHP_INSTALL_FOLDER \
+    && ./configure --with-config-file-path=/etc \
+        --with-config-file-scan-dir=/etc/php.d \
+        --with-apxs2=/usr/bin/apxs \
+        --enable-bcmath \
+        --enable-calendar \
+        --enable-exif \
+        --enable-ftp \
+        --enable-gd-native-ttf \
+        --enable-intl \
+        --enable-mbstring \
+		--enable-phar=shared \
+        --enable-posix \
+        --enable-shmop \
+        --enable-soap \
+        --enable-sockets \
+        --enable-wddx \
+        --enable-zip \
+        --enable-fileinfo=shared \
+        --enable-zip=shared \
+        --with-bz2 \
+        --with-curl=shared,/usr \
+        --enable-json=shared,/usr \
+        --with-freetype-dir=/usr \
+        --with-gd \
+        --with-iconv \
+        --with-libdir=lib64 \
+        --with-mbstring \
+        --with-mssql \
+        --with-mysql \
+        --with-mysql-sock=/var/lib/mysql/mysql.sock \
+        --with-mysqli \
+        --with-pcre-regex \
+        --with-pgsql=/usr/lib64/pgsql \
+        --with-pdo \
+        --with-pdo-dblib \
+        --with-pdo-mysql \
+        --with-pdo-mysql=mysqlnd \
+        --with-pdo-pgsql \
+        --with-pdo-sqlite \
+        --with-php-dev \
+        --with-png-dir=/usr \
+        --with-spl \
+        --with-zlib \
+        --with-phar \
+#		--with-oci8=instantclient,DIR \
+        --with-odbc \
+#        --with-db2 \
+        --with-pear=/usr/local/bin/pecl \
+        --with-redis \
+   &&  make &&  make install
+
+
+RUN set -x
+RUN #mkdir -p /usr/lib64/php/modules/
+RUN #chmod 777 -R /usr/lib64/php/modules
+
+# Install dependencies
+RUN yum update -y && yum install -y git
+# RUN yum install -y php56-php-devel php56-php-pear
+
+
+RUN wget https://xdebug.org/files/xdebug-2.5.5.tgz
+RUN tar -xzf xdebug-2.5.5.tgz
+RUN cd xdebug-2.5.5 \
+    && phpize \
+    && ./configure --enable-xdebug   \
+    && make && make install
+
+RUN cp /$FOLDERNAME/xdebug-2.5.5/modules/xdebug.so /usr/lib64/php/modules/
+#
+COPY ./docker/config/mssql/* /$FOLDERNAME/
+#
+
+#PHP END INSTALL ############################
+
+# -----------------------------------------------------------------------------
+# Install DB2 PDO driver
+# -----------------------------------------------------------------------------
+ENV DB2EXPRESSC_URL https://s3-ap-southeast-1.amazonaws.com/naqoda/downloads/ibm_data_server_driver_package_linuxx64_v10.5.tar.gz
+ENV IBM_DB_HOME /opt/ibm/dsdriver
+ENV LD_LIBRARY_PATH /opt/ibm/dsdriver/odbc_cli_driver/linuxamd64/clidriver/lib
+RUN mkdir -p /etc/php.d
+RUN touch /etc/php.d/pdo_db2.ini
+
+RUN mkdir /opt/ibm \
+    && curl -fSLo /opt/ibm/expc.tar.gz $DB2EXPRESSC_URL
+    RUN cd /opt/ibm && tar xf expc.tar.gz \
+    && rm /opt/ibm/expc.tar.gz \
+	&& cp $IBM_DB_HOME/php_driver/linuxamd64/php64/ibm_db2_5.3.6_nts.so /usr/lib64/php/modules/ibm_db2.so \
+	&& cp $IBM_DB_HOME/php_driver/linuxamd64/php64/pdo_ibm_5.3.6_nts.so /usr/lib64/php/modules/pdo_ibm.so \
+	&& cd /opt/ibm/dsdriver/odbc_cli_driver/linuxamd64 \
+    && tar xf ibm_data_server_driver_for_odbc_cli.tar.gz \
+	&& cp $IBM_DB_HOME/odbc_cli_driver/linuxamd64/clidriver/cfg/db2cli.ini.sample /etc/db2cli.ini \
+	&& cp $IBM_DB_HOME/odbc_cli_driver/linuxamd64/clidriver/cfg/db2dsdriver.cfg.sample /etc/db2dsdriver.cfg \
+	&& echo 'extension=ibm_db2.so' > /etc/php.d/pdo_db2.ini \
+ 	&& echo 'extension=pdo_ibm.so' >> /etc/php.d/pdo_db2.ini
+
+
+RUN #cp $IBM_DB_HOME/dsdriver/odbc_cli_driver/linuxamd64/libdb2.so /usr/lib64/php/modules/libdb2.so
+
+COPY docker/config/db2/drivers/* /usr/lib64/php/modules/
+
+RUN mkdir -p /$FOLDERNAME/db2/config-custom
+COPY ./docker/config/db2/db2cli.ini /$FOLDERNAME/db2/config-custom/db2cli.ini
+COPY ./docker/config/db2/db2dsdriver.cfg /$FOLDERNAME/db2/config-custom/db2dsdriver.cfg
+
+#RUN cat  /$FOLDERNAME/db2/config-custom/db2cli.ini >> /etc/db2cli.ini
+#RUN cat  /$FOLDERNAME/db2/config-custom/db2dsdriver.cfg >> /etc/db2dsdriver.cfg
+
+COPY ./docker/config/db2/db2cli.ini /etc/db2cli.ini
+COPY ./docker/config/db2/db2dsdriver.cfg /etc/db2dsdriver.cfg
+
+
+#COPY docker/config/db2/* /usr/lib64/php/modules/
+
+#composer
+RUN #curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+# INSTALL COMPOSER
+#COPY ./docker/config/php/composer-installer.sh /usr/local/bin/composer-installer
+
+#RUN chmod +x /usr/local/bin/composer-installer \
+#    && /usr/local/bin/composer-installer \
+#    && mv composer.phar /usr/local/bin/composer \
+#    && chmod +x /usr/local/bin/composer \
+#    && composer --version
+
+#sql server
+RUN yum install -y   unixODBC-devel
+RUN #pecl install sqlsrv pdo_sqlsrv
+
+# Import the public repository GPG keys
+RUN rpm --import https://packages.microsoft.com/keys/microsoft.asc
+
+# Register the Microsoft SQL Server Red Hat repository
+RUN curl -o /etc/yum.repos.d/mssql-release.repo https://packages.microsoft.com/config/rhel/7/mssql-server-2019.repo
+
+
+RUN #curl https://packages.microsoft.com/config/rhel/7/prod.repo > /etc/yum.repos.d/mssql-release.repo
+#RUN ACCEPT_EULA=Y yum install -y msodbcsql17
+#RUN ACCEPT_EULA=Y yum install -y mssql-tools
+#RUN echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> ~/.bashrc
+#RUN source ~/.bashrc
+#
+#RUN echo extension=pdo_sqlsrv.so >> `php --ini | grep "Scan for additional .ini files" | sed -e "s|.*:\s*||"`/30-pdo_sqlsrv.ini
+#RUN echo extension=sqlsrv.so >> `php --ini | grep "Scan for additional .ini files" | sed -e "s|.*:\s*||"`/20-sqlsrv.ini
+#
+#RUN yum install -y  unixODBC unixODBC-devel
+#
+#
+#
+#
+##INSTALL MSSQL SERVER DRIVERS FOR PHP 5.6
+#RUN curl https://packages.microsoft.com/config/rhel/7/prod.repo > /etc/yum.repos.d/mssql-release.repo
+#RUN ACCEPT_EULA=Y yum install -y msodbcsql18
+#RUN ACCEPT_EULA=Y yum install -y mssql-tools
+#RUN echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> ~/.bashrc
+#RUN source ~/.bashrc
+# optional: for unixODBC development headers
+RUN yum install -y unixODBC-devel
+
+RUN #echo 'extension=pdo_sqlsrv.so' >> `php --ini | grep "Scan for additional .ini files" | sed -e "s|.*:\s*||"`/30-pdo_sqlsrv.ini
+RUN #echo 'extension=sqlsrv.so' >> `php --ini | grep "Scan for additional .ini files" | sed -e "s|.*:\s*||"`/20-sqlsrv.ini
+
+# INSTALLS systemctl  alternative so that docker container can run more like normal linux box
+# allows you to retsart apache in running container - httpd - k restart
+
+
+
+# -----------------------------------------------------------------------------
+# Install DB2 PDO driver
+# -----------------------------------------------------------------------------
+ENV DB2EXPRESSC_URL https://s3-ap-southeast-1.amazonaws.com/naqoda/downloads/ibm_data_server_driver_package_linuxx64_v10.5.tar.gz
+ENV IBM_DB_HOME /opt/ibm/dsdriver
+ENV LD_LIBRARY_PATH /opt/ibm/dsdriver/odbc_cli_driver/linuxamd64/clidriver/lib
+
+RUN mkdir -p /opt/ibm \
+    && curl -fSLo /opt/ibm/expc.tar.gz $DB2EXPRESSC_URL
+    RUN cd /opt/ibm && tar xf expc.tar.gz \
+    && rm /opt/ibm/expc.tar.gz \
+	&& cp $IBM_DB_HOME/php_driver/linuxamd64/php64/ibm_db2_5.3.6_nts.so /usr/lib64/php/modules/ibm_db2.so \
+	&& cp $IBM_DB_HOME/php_driver/linuxamd64/php64/pdo_ibm_5.3.6_nts.so /usr/lib64/php/modules/pdo_ibm.so \
+	&& cp $IBM_DB_HOME/php_driver/linuxamd64/php64/pdo_ibm_5.3.6_nts.so /usr/lib64/php/modules/pdo_ibm.so \
+	&& cd /opt/ibm/dsdriver/odbc_cli_driver/linuxamd64 \
+    && tar xf ibm_data_server_driver_for_odbc_cli.tar.gz \
+	&& cp $IBM_DB_HOME/odbc_cli_driver/linuxamd64/clidriver/cfg/db2cli.ini.sample /etc/db2cli.ini \
+	&& cp $IBM_DB_HOME/odbc_cli_driver/linuxamd64/clidriver/cfg/db2dsdriver.cfg.sample /etc/db2dsdriver.cfg \
+	&& echo 'extension=ibm_db2.so' > /etc/php.d/pdo_db2.ini \
+	&& echo 'extension=pdo_ibm.so' >> /etc/php.d/pdo_db2.ini
+
+
+RUN #cp $IBM_DB_HOME/dsdriver/odbc_cli_driver/linuxamd64/libdb2.so /usr/lib64/php/modules/libdb2.so
+
+COPY docker/config/db2/drivers/* /usr/lib64/php/modules/
+
+RUN mkdir -p /$FOLDERNAME/db2/config-custom
+COPY ./docker/config/db2/db2cli.ini /$FOLDERNAME/db2/config-custom/db2cli.ini
+COPY ./docker/config/db2/db2dsdriver.cfg /$FOLDERNAME/db2/config-custom/db2dsdriver.cfg
+
+#RUN cat  /$FOLDERNAME/db2/config-custom/db2cli.ini >> /etc/db2cli.ini
+#RUN cat  /$FOLDERNAME/db2/config-custom/db2dsdriver.cfg >> /etc/db2dsdriver.cfg
+
+COPY ./docker/config/db2/db2cli.ini /etc/db2cli.ini
+COPY ./docker/config/db2/db2dsdriver.cfg /etc/db2dsdriver.cfg
+
+
+
+#added systemctl alternative
+RUN wget https://raw.githubusercontent.com/gdraheim/docker-systemctl-replacement/master/files/docker/systemctl.py -O /usr/local/bin/systemctl
+RUN chmod 755 /usr/local/bin/systemctl
+
+# Installs phpredis and compiles it
+RUN  git clone -b 4.3.0 --single-branch https://github.com/phpredis/phpredis.git
+RUN cd phpredis \
+    && phpize \
+    && ./configure \
+    && make && make install
+
+# ODBC
+## when u try to coonfigure this, it throws error
+## found solution here https://github.com/docker-library/php/issues/103
+#So, the generated ./configure script has a number of those test "$PHP_XXX" = "no" && PHP_XXX=yes lines. If I comment them all out and run it again, it works and the whole module builds successfully. WUT
+# sed replaced them
+
+RUN cd /$FOLDERNAME/$PHP_INSTALL_FOLDER/ext/odbc \
+	&& phpize \
+    && sed -ri 's@^ *test +"\$PHP_.*" *= *"no" *&& *PHP_.*=yes *$@#&@g' configure \
+ 	&& ./configure --with-unixODBC=shared,/usr \
+    && make | tee   \
+    && make install
+
+
+COPY ./docker/config/oci/30-pdo_oci.ini /etc/php.d/30-pdo_oci.ini
+COPY ./docker/config/oci/20-oci8.ini /etc/php.d/20-oci8.ini
+
+# ORACLE oci
+RUN mkdir /opt/oracle \
+    && cd /opt/oracle
+
+COPY ./docker/instantclient_11_2 /opt/oracle/instantclient_11_2
+
+#ADD https://download.oracle.com/otn_software/linux/instantclient/199000/instantclient-basic-linux.x64-11.2.0.4.0.zip /opt/oracle
+#ADD https://download.oracle.com/otn_software/linux/instantclient/199000/instantclient-sdk-linux.x64-19.9.0.0.0dbru.zip /opt/oracle
+#
+#RUN wget https://download.oracle.com/otn_software/otn/linux/instantclient/11204/instantclient-basic-linux.x64-11.2.0.4.0.zip /opt/oracle
+#RUN wget https://download.oracle.com/otn/linux/instantclient/11204/instantclient-sdk-linux.x64-11.2.0.4.0.zip /opt/oracle
+#RUN wget https://www.oracle.com/in/database/technologies/instant-client/linux-x86-64-downloads.html
+## Install Oracle Instantclient
+RUN  #unzip /opt/oracle/instantclient-basic-linux.x64-11.2.0.4.0.zip -d /opt/oracle \
+#    && unzip instantclient-sdk-linux.x64-11.2.0.4.0.zip  -d /opt/oracle
+##
+RUN  #ln -s /opt/oracle/instantclient_11_2/libclntshcore.so.11.1 /opt/oracle/instantclient_11_2/libclntshcore.so
+
+ENV LD_LIBRARY_PATH  /opt/oracle/instantclient_11_2:${LD_LIBRARY_PATH}
+
+RUN yum install -y  systemtap-sdt-devel  libaio-devel libaio
+RUN ln -s /opt/oracle/instantclient_11_2/libclntsh.so.*.1 /opt/oracle/instantclient_11_2/libclntsh.so
+
+
+RUN export PHP_DTRACE=yes
+RUN cd /$FOLDERNAME/php-5.6.15/ext/oci8 \
+	&& phpize \
+	&& ./configure  --with-oci8=instantclient,/opt/oracle/instantclient_11_2 \
+	&& make \
+    && make install
+
+RUN cd /$FOLDERNAME/php-5.6.15/ext/pdo_oci \
+	&& phpize \
+    && ./configure --with-pdo-oci=instantclient,/opt/oracle/instantclient_11_2,11.2 \
+	&& make   \
+    && make install
+
+
+COPY ./docker/config/oci/30-pdo_oci.ini /etc/php.d/30-pdo_oci.ini
+COPY ./docker/config/oci/20-oci8.ini /etc/php.d/20-oci8.ini
+
+
+
+
+# SET VARIABLES AND ARGS   #################################################################
+
+ENV HTTPD_MAIN_CONF_PATH=/etc/httpd/conf \
+	HTTPD_DATA_ORIG_PATH=/var/www \
+	HTTPD_MAIN_CONF_D_PATH=/etc/httpd/conf.d \
+	APP_DATA=${APP_ROOT}/src \
+	HTTPD_VAR_PATH=/var \
+	APACHE_LOG_DIR=/var/log/httpd
+ENV SLIM_MODE=production
+ENV CI_ENV=production \
+    SOME_KEY=someValue
+
+ARG DOCKER_IP_ADDRESS_API
+ENV DOCKER_IP_ADDRESS_API=$DOCKER_IP_ADDRESS_API
+
+ARG XDEBUG_REMOTE_PORT_API
+ENV XDEBUG_REMOTE_PORT_API=$XDEBUG_REMOTE_PORT_API
+
+ARG XDEBUG_CLIENT_PORT_API
+ENV XDEBUG_CLIENT_PORT_API=$XDEBUG_CLIENT_PORT_API
+
+ARG X_API_URL
+ENV X_API_URL=$X_API_URL
+
+#ADD PROGRAMS TO PATH SECTION   ###############################################################
+
+RUN  export PATH=$PATH:/usr/bin/odbcinst
+
+#COPY LOCAL CONFIG FILES SECTION   ###############################################################
+
+COPY ./docker/config/mssql/* /$FOLDERNAME/
+
+RUN cat  /$FOLDERNAME/odbcinst.ini >> /etc/odbcinst.ini
+RUN cat  /$FOLDERNAME/odbc.ini >> /etc/odbc.ini
+
+db
+RUN mkdir -p /var/log/php \
+	&& touch /var/log/php/mono.log \
+	&& touch /var/log/php/error.log \
+	&& mkdir -p /var/log/sql \
+	&& touch /var/log/sql/sql_queries.log \
+	&& chmod -R +rwX  /var/log/ \
+	&& chown -R apache:apache /var/log/ \
+	&& chown -R apache:apache /var/www/html
+
+COPY docker/config/php/php.ini-development /etc/php.ini
+COPY docker/config/php/php-add.ini /$FOLDERNAME/php-add.ini
+COPY docker/config/aliases  /$FOLDERNAME/aliases
+RUN cat /$FOLDERNAME/aliases >> /root/.bashrc
+RUN cat /$FOLDERNAME/php-add.ini >> /etc/php.ini
+
+
+#RUN cp /usr/local/lib/php/extensions/no-debug-non-zts-20131226/* /usr/lib64/php/modules
+RUN echo 'extension_dir = "/usr/lib64/php/modules"' >> /etc/php.ini && \
+    echo 'extension=/usr/lib64/php/modules/odbc.so' >> /etc/php.ini && \
+    echo 'extension=/usr/lib64/php/modules/redis.so' >> /etc/php.ini && \
+    echo 'zend_extension =/usr/lib64/php/modules/xdebug.so' >> /etc/php.ini && \
+    # Build and install JSON extension
+    cd /$FOLDERNAME/$PHP_INSTALL_FOLDER/ext/json && \
+    /usr/local/bin/phpize && \
+    ./configure --with-php-config=/usr/local/bin/php-config && \
+    make && make install && \
+    # Build and install Phar extension
+    cd /$FOLDERNAME/$PHP_INSTALL_FOLDER/ext/phar && \
+    /usr/local/bin/phpize && \
+    ./configure --with-php-config=/usr/local/bin/php-config && \
+    make && make install && \
+    # Create and configure extension INI files
+    touch /etc/php.d/json.ini /etc/php.d/phar.ini && \
+    echo "extension=json.so" > /etc/php.d/json.ini && \
+    echo "extension=phar.so" > /etc/php.d/phar.ini && \
+    # Copy and set permissions for extensions
+    cp /usr/local/lib/php/extensions/no-debug-zts-20131226/json.so /usr/lib64/php/modules/ && \
+    cp /usr/local/lib/php/extensions/no-debug-zts-20131226/phar.so /usr/lib64/php/modules/ && \
+    chmod 755 /usr/lib64/php/modules/json.so && \
+    chmod 755 /usr/lib64/php/modules/phar.so
+
+# Use backslash to continue commands and && to chain them
+RUN cd /$FOLDERNAME && \
+    wget https://pecl.php.net/get/redis-4.3.0.tgz && \
+    tar xzf redis-4.3.0.tgz && \
+    cd redis-4.3.0 && \
+    /usr/local/bin/phpize && \
+    ./configure --with-php-config=/usr/local/bin/php-config && \
+    make && make install && \
+    cp /usr/local/lib/php/extensions/no-debug-zts-20131226/redis.so /usr/lib64/php/modules/
+
+# Composer installation in a separate RUN (since it's a different logical group)
+RUN cd /$FOLDERNAME && \
+    php -r "copy('http://getcomposer.org/installer', 'composer-setup.php');" && \
+    php composer-setup.php --disable-tls --install-dir=/usr/local/bin --filename=composer && \
+    composer config --global disable-tls true && \
+    composer config --global secure-http false
+
+
+RUN echo "xdebug.remote_host=${X_API_URL}" >> /etc/php.ini
+RUN echo "xdebug.remote_port=${XDEBUG_REMOTE_PORT_API}" >> /etc/php.ini
+RUN echo "xdebug.client_port=${XDEBUG_CLIENT_PORT_API}" >> /etc/php.ini
+
+RUN #cp /usr/local/lib/php/extensions/no-debug-non-zts-20131226/redis.so /usr/lib64/php/modules
+
+# Set TimeZone
+RUN ln -sf /usr/share/zoneinfo/America/New_York/etc/localtime
+
+
+RUN mkdir -p /etc/httpd/sites-enabled \
+	&& mkdir -p /etc/httpd/sites-available \
+	&& chown -R apache:apache /var/www/html
+
+COPY docker/config/httpd/httpd.conf /etc/httpd/conf/httpd.conf
+COPY docker/config/httpd/apache.conf /etc/httpd/sites-enabled/000-default.conf
+COPY docker/config/httpd/apache.conf /etc/httpd/sites-available/000-default.conf
+
+COPY docker/config/freetds/freetds.conf  /etc/freetds.conf
+
+COPY docker/config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY docker/config/start-container /usr/local/bin/start-container
+
+
+# CONFIG FILE SECTION #################################################################
+# Update Apache Configuration
+#Overall, this command modifies the Apache HTTP Server configuration file
+# by changing the AllowOverride directive within the <Directory "/var/www/html"> block
+# from None to All.
+# This allows .htaccess files in the /var/www/html directory to
+# override the configuration settings specified in the main configuration file.
+
+RUN sed -E -i -e '/<Directory "\/var\/www\/html">/,/<\/Directory>/s/AllowOverride None/AllowOverride All/' /etc/httpd/conf/httpd.conf
+
+# Overall, this command modifies the Apache HTTP Server configuration file by
+# changing the DirectoryIndex directive to specify index.php as the default index file.
+# If the DirectoryIndex directive previously had a value specified (such as index.html),
+# that value is retained and appended to the end of the DirectoryIndex directive (e.g., DirectoryIndex index.php index.html).
+RUN sed -E -i -e 's/DirectoryIndex (.*)$/DirectoryIndex index.php \1/g' /etc/httpd/conf/httpd.conf
+
+
+# when  compiling php from download, it is not loading libphp5.so, but if yum install php56 is used, it doesnt load, this will load it manually
+RUN sed -E -i -e 's/#LoadModule php5_module modules\/libphp5.so/LoadModule php5_module modules\/libphp5.so/' /etc/httpd/conf/httpd.conf
+
+RUN #cp /usr/local/lib/php/extensions/no-debug-zts-20131226/*.so /usr/lib64/php/modules/
+
+RUN mkdir -p /etc/php.dBK
+RUN mv /etc/php.d/20-bz2.ini /etc/php.dBK/20-bz2.ini
+RUN mv /etc/php.d/20-calendar.ini /etc/php.dBK/20-calendar.ini
+RUN mv /etc/php.d/20-exif.ini /etc/php.dBK/20-exif.ini
+RUN mv /etc/php.d/20-ftp.ini /etc/php.dBK/20-ftp.ini
+RUN mv /etc/php.d/20-iconv.ini /etc/php.dBK/20-iconv.ini
+RUN mv /etc/php.d/20-curl.ini /etc/php.dBK/20-curl.ini
+RUN mv /etc/php.d/20-fileinfo.ini /etc/php.dBK/20-fileinfo.ini
+RUN mv /etc/php.d/20-gettext.ini /etc/php.dBK/20-gettext.ini
+RUN mv /etc/php.d/20-posix.ini /etc/php.dBK/20-posix.ini
+RUN mv /etc/php.d/20-shmop.ini /etc/php.dBK/20-shmop.ini
+RUN mv /etc/php.d/20-sockets.ini /etc/php.dBK/20-sockets.ini
+RUN mv /etc/php.d/30-wddx.ini /etc/php.dBK/30-wddx.ini
+
+RUN chmod +x /usr/local/bin/start-container
+
+CMD ["/bin/bash","start-container"]
