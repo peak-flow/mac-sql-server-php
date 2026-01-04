@@ -2,6 +2,9 @@
 frankenphp/
 frankenphp-demo/
 
+# Agent tools
+.pf-agent-system-mapper/
+
 # Build artifacts
 dist/
 *.tar
@@ -22,5 +25,8 @@ Thumbs.db
 *.swp
 *.swo
 
-# Conversation exports (optional - remove if you want to track)
+# Conversation exports and research notes
 ai-conversation-*.txt
+chris-fidao-talk-secret-of-frankenphp.md
+FrankenPHP: the future of PHP.md
+It's Alive! Exploring The New FrankenPHP Modern Hi.md
