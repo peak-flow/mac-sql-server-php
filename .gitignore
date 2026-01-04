@@ -1,0 +1,26 @@
+# Cloned repositories
+frankenphp/
+frankenphp-demo/
+
+# Build artifacts
+dist/
+*.tar
+*.tar.gz
+
+# static-php-cli build directories
+buildroot/
+source/
+downloads/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Conversation exports (optional - remove if you want to track)
+ai-conversation-*.txt
