@@ -12,10 +12,12 @@
 ## Verification Summary
 | Status | Count |
 |--------|-------|
-| VERIFIED | 32 |
+| VERIFIED | 38 |
 | INFERRED | 4 |
 | NOT_FOUND | 2 |
 | ASSUMED | 1 |
+
+**Last Updated:** 2026-01-04 (Laravel-compatible build findings added)
 
 ---
 
@@ -604,6 +606,109 @@ PHP_EXTENSIONS="pdo,pdo_sqlsrv,ctype,session,mbstring,openssl" \
    - May have slight startup delay on first execution
    - Subsequent runs use cached extraction (checksum-based)
 
+5. **[VERIFIED: 2026-01-04 build test]** `watcher` library causes macOS linking errors
+   - Error: `Undefined symbols: _FSEventStreamCreate, _FSEventStreamStart, _FSEventStreamStop`
+   - Cause: watcher library requires CoreServices framework not linked in static build
+   - Fix: Exclude `watcher` from `PHP_EXTENSION_LIBS`
+   - Impact: Hot reload/file watching disabled (PHP files still re-read on each request)
+
+6. **[VERIFIED: 2026-01-04 build test]** `curl` extension has deep dependency chain on macOS
+   - Requires: `libssh2` → `ldap` symbols
+   - Each dependency adds more linking requirements
+   - Fix: Omit `curl` extension, use `sockets` instead
+   - Laravel/Guzzle HTTP client falls back to PHP streams automatically
+
+---
+
+## Laravel-Compatible Build (VERIFIED 2026-01-04)
+
+### Minimum Required Extensions for Laravel
+
+[VERIFIED: Tested with Laravel app successfully]
+```
+pdo,pdo_sqlsrv,ctype,dom,fileinfo,filter,mbstring,openssl,session,tokenizer,xml,json,bcmath,sockets
+```
+
+**Extension Purpose:**
+| Extension | Laravel Requirement |
+|-----------|---------------------|
+| `pdo` | Database abstraction base |
+| `pdo_sqlsrv` | SQL Server connectivity |
+| `ctype` | Character type checking |
+| `dom` | XML/HTML DOM manipulation |
+| `fileinfo` | MIME type detection |
+| `filter` | Input validation |
+| `mbstring` | Multi-byte string handling |
+| `openssl` | Encryption, HTTPS |
+| `session` | Session management |
+| `tokenizer` | PHP code parsing |
+| `xml` | XML parsing |
+| `json` | JSON encode/decode |
+| `bcmath` | Arbitrary precision math |
+| `sockets` | Guzzle HTTP fallback (replaces curl) |
+
+### Working Build Command
+
+[VERIFIED: Successfully built and tested]
+```bash
+PHP_VERSION=8.2 \
+PHP_EXTENSIONS="pdo,pdo_sqlsrv,ctype,dom,fileinfo,filter,mbstring,openssl,session,tokenizer,xml,json,bcmath,sockets" \
+PHP_EXTENSION_LIBS="libavif,nghttp2,nghttp3,ngtcp2,brotli" \
+./build-static.sh
+```
+
+**Key Differences from Default:**
+- `PHP_EXTENSION_LIBS` excludes `watcher` (causes FSEventStream errors)
+- `PHP_EXTENSIONS` excludes `curl` (dependency chain issues)
+- `sockets` included for Guzzle HTTP client fallback
+
+### Verify Laravel Extensions
+
+```bash
+# Create test file
+echo '<?php print_r(get_loaded_extensions());' > /tmp/test.php
+
+# Check extensions (note: use php-cli, not php -m)
+./dist/frankenphp-mac-arm64 php-cli /tmp/test.php
+```
+
+### Run Laravel App
+
+```bash
+# From Laravel project root
+/path/to/frankenphp-mac-arm64 php-server -l :8000 -r public/
+
+# Or with absolute paths
+/path/to/frankenphp-mac-arm64 php-server -l :8000 -r /path/to/laravel/public/
+```
+
+### HTTP Client Without curl
+
+Laravel's HTTP facade uses Guzzle, which automatically falls back to PHP streams when curl is unavailable:
+
+[VERIFIED: Test route working without curl extension]
+```php
+// routes/web.php - test route
+Route::get('/http-test', function () {
+    $response = Http::get('https://httpbin.org/get');
+    return response()->json([
+        'success' => true,
+        'status' => $response->status(),
+    ]);
+});
+```
+
+---
+
+## Clean Rebuild
+
+If build fails or you want fresh build:
+
+```bash
+rm -rf dist/static-php-cli/buildroot dist/static-php-cli/source
+# Then run build command again
+```
+
 ---
 
 ## Quick Reference: Building with SQL Server for macOS
@@ -612,14 +717,19 @@ PHP_EXTENSIONS="pdo,pdo_sqlsrv,ctype,session,mbstring,openssl" \
 cd frankenphp
 
 # Option 1: Full default build (already includes pdo_sqlsrv)
+# WARNING: May fail on macOS due to watcher library
 ./build-static.sh
 
-# Option 2: With your embedded app
-EMBED=/path/to/your/app ./build-static.sh
+# Option 2: Laravel-compatible with SQL Server (RECOMMENDED)
+PHP_VERSION=8.2 \
+PHP_EXTENSIONS="pdo,pdo_sqlsrv,ctype,dom,fileinfo,filter,mbstring,openssl,session,tokenizer,xml,json,bcmath,sockets" \
+PHP_EXTENSION_LIBS="libavif,nghttp2,nghttp3,ngtcp2,brotli" \
+./build-static.sh
 
-# Option 3: Minimal with SQL Server
-PHP_EXTENSIONS="pdo,pdo_sqlsrv,ctype,session,mbstring,json,openssl,curl" \
-  ./build-static.sh
+# Option 3: With your embedded app
+EMBED=/path/to/your/app \
+PHP_EXTENSION_LIBS="libavif,nghttp2,nghttp3,ngtcp2,brotli" \
+./build-static.sh
 
 # Result
 ls -la dist/frankenphp-mac-*
@@ -629,4 +739,21 @@ ls -la dist/frankenphp-mac-*
 
 ---
 
+## macOS Prerequisites
+
+```bash
+# Install Homebrew (if not installed)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install build dependencies
+brew install go composer unixodbc
+
+# Install Microsoft ODBC Driver (required at runtime)
+brew tap microsoft/mssql-release https://github.com/microsoft/homebrew-mssql-release
+HOMEBREW_ACCEPT_EULA=Y brew install msodbcsql18
+```
+
+---
+
 *Documentation generated following agent-system-mapper methodology v1.0*
+*Updated 2026-01-04 with Laravel-compatible build findings*
