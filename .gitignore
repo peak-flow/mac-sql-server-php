@@ -30,3 +30,8 @@ ai-conversation-*.txt
 chris-fidao-talk-secret-of-frankenphp.md
 FrankenPHP: the future of PHP.md
 It's Alive! Exploring The New FrankenPHP Modern Hi.md
+
+# Build logs
+build-info.txt
+next-build.txt
+*-build.txt
